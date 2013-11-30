@@ -1,0 +1,178 @@
+
+Ruby2.0, Rails4で確認
+
+いつか試そういつか試そうと思っていたOmniauthを使ってのTwitterログインを試してみました。
+
+[詳細記事はこちらをご参照ください](http://blog.hello-world.jp.net/?p=847)
+
+### 初期設定
+
+* Twitterアプリの作成
+
+callback URLに「http://127.0.0.1:3000/auth/twitter」を指定しておきます。
+
+後々投稿もさせたいのでAccessを「Read and Write」にしてあります。
+
+「Allow this application to use 'Sign in with Twitter」にチェックを入れておくと、二度目のログイン以降は認証画面を省略することができます。
+
+* Gemfile追加
+
+```
+gem 'omniauth'
+gem 'omniauth-twitter'
+gem 'settingslogic'
+```
+
+* bundle install
+
+```
+./bin bundle install
+```
+
+* settingslogic initializer設定
+
+```config/initializers/0_settings.rb
+class Settings < Settingslogic
+  source "#{Rails.root}/config/settings.yml"
+  namespace Rails.env
+end
+```
+
+* settings.ymlにtwitter設定を記述
+
+```config/settings.yml
+defaults: &defaults
+
+development:
+  <<: *defaults
+  twitter:
+    consumer_key: YOUR CONSUMER KEY
+    consumer_secret: YOUR CONSUMER SECRET
+
+test:
+  <<: *defaults
+
+production:
+  <<: *default
+```
+
+* omniauth initializer設定
+
+```config/initializers/omniauth.rb
+Rails.application.config.middleware.use OmniAuth::Builder do
+  provider :twitter, Settings.twitter.consumer_key, Settings.twitter.cunsumer_secret
+end
+```
+
+## model作成
+
+* userモデル作成
+
+```
+./bin/rails g model user provider:string uid:string screen_name:string name:string
+```
+
+* migrate
+
+```
+./bin/rake db:migrate
+```
+
+## controller作成
+
+* controller作成
+
+```
+./bin/rails g controller base
+./bin/rails g controller home index
+./bin/rails g controller sessions
+```
+
+* routing追加
+
+```config/routes.rb
+root 'home#index'
+get "home/index"
+get '/auth/:provider/callback', :to => 'sessions#callback'
+post '/auth/:provider/callback', :to => 'sessions#callback'
+get '/logout' => 'sessions#destroy', :as => :logout
+```
+
+* BaseController
+
+```app/controllers/base_controller.rb
+class BaseController < ActionController::Base
+  protect_from_forgery
+
+  def login_required
+    if session[:user_id]
+      @current_user = User.find(session[:user_id])
+    else
+      redirect_to root_path
+    end
+
+  end
+
+  helper_method :current_user
+
+  private
+  def current_user
+    @current_user ||= User.find(session[:user_id]) if session[:user_id]
+  end
+end
+```
+
+* HomeController
+
+```app/controllers/home_controller.rb
+class HomeController < BaseController
+  def index
+  end
+end
+```
+
+* SessionController
+
+```app/controllers/sessions_controller.rb
+class SessionsController < ApplicationController
+  def callback
+    auth = request.env['omniauth.auth']
+    user = User.find_by_provider_and_uid(auth['provider'], auth['uid']) || User.create_with_omniauth(auth)
+    session[:user_id] = user.id
+    redirect_to root_path
+  end
+
+  def destroy
+    session[:user_id] = nil
+    redirect_to root_path
+  end
+end
+```
+
+## View変更
+
+* layout追加
+
+```app/views/layouts/application.html.erb
+<% if @current_user %>
+  <%= @current_user.name %> <%= link_to 'ログアウト', logout_path %>
+<% else %>
+  <%= link_to 'ログイン', '/auth/twitter' %>
+<% end %>
+```
+
+ブラウザから[http://127.0.0.1:3000](http://127.0.0.1:3000)
+にアクセスするとログインリンクが表示され、Twitter認証ができるようになりました。
+
+## 次回は
+
+ログインしたアカウントでTweet投稿ができるようにしてみます。
+
+### 参考
+* [RailsでOmniauthを使ってTwitterログインする](http://blog.hello-world.jp.net/?p=847)
+* [intridea / omniauth](https://github.com/intridea/omniauth)
+* [(メモ) Rails+OmniAuthによるTwitterログイン](http://d.hatena.ne.jp/m-kawato/20130105/1357399125)
+* [OmniAuth 1.1.4とRails 4.0.1でTwitterアカウントによる認証](http://blog.iotaworks.jp/2013/11/omniauth-twitter-with-rails.html)
+* [Railsでomniauthを使ってtwitter,facebookの簡単ログイン認証](http://www.geekzshu.com/rails/1562)
+* [Twitter OAuth の挙動が変わりました](http://koiroha.blogspot.jp/2013/03/changes-to-the-sign-in-with-twiter-flow.html)
+* [241: 簡単なOmniAuth](http://ja.asciicasts.com/episodes/241-simple-omniauth)

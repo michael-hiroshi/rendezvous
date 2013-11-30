@@ -1,0 +1,162 @@
+
+##参考
+
+[Twiwt:Blog / jugyo : OmniAuth で簡単 Twitter 認証！](http://blog.twiwt.org/e/c3afce)
+
+[Omniauth NoMethodError in SessionsController - Stack Overflow](http://stackoverflow.com/questions/10771176/omniauth-nomethoderror-in-sessionscontroller)
+
+##Gemfileに以下を追記後、bundle install
+
+```ruby:
+gem 'omniauth'
+gem 'omniauth-twitter'
+```
+
+その後
+
+```shell:
+bundle install
+```
+
+
+##Twitterのconsumer key/sercret を記入
+
+config/initializers/omniauth.rb に取得したKeyを入れる。
+
+```ruby:omniauth.rb
+Rails.application.config.middleware.use OmniAuth::Builder do
+  provider :twitter, 'CONSUMER_KEY', 'CONSUMER_SECRET'
+end
+```
+
+##SessionsControllerを作成
+
+```shell:
+rails g controller sessions
+```
+
+app/controllers/sessions_controller.rbを以下に編集<br>
+
+```ruby:sessions_controller.rb
+class SessionsController < ApplicationController
+  def callback
+    auth = request.env["omniauth.auth"]
+    user = User.find_by_provider_and_uid(auth["provider"], auth["uid"]) || User.create_with_omniauth(auth)
+    session[:user_id] = user.id
+    redirect_to root_url, :notice => "Signed in!"
+  end
+
+  def destroy
+    session[:user_id] = nil
+    redirect_to root_url, :notice => "Signed out!"
+  end
+end
+```
+
+##config/routes.rb に認証のルーティングを記入
+
+```ruby:routes.rb
+match '/auth/:provider/callback' => 'sessions#callback'
+match "/signout" => "sessions#destroy", :as => :signout
+```
+
+##User モデルの作成
+
+```shell:
+rails g model user
+```
+
+
+ db/migrate/XXXXXXXXXXXXXX_create_users.rb を編集。
+
+```ruby:XXXXXXXXXXXXXX_create_users.rb
+class CreateUsers < ActiveRecord::Migration
+  def self.up
+    create_table :users do |t|
+      t.string :provider, :null => false
+      t.string :uid, :null => false
+      t.string :screen_name, :null => false, :uniq => true
+      t.string :name, :null => false
+
+      t.timestamps
+    end
+    add_index :users, [:provider, :uid]
+    add_index :users, [:screen_name]
+  end
+
+  def self.down
+    drop_table :users
+  end
+end
+```
+
+app/models/user.rbを編集。
+
+```ruby:user.rb
+class User < ActiveRecord::Base
+  def self.create_with_omniauth(auth)
+    create! do |user|
+      user.provider = auth["provider"]
+      user.uid = auth["uid"]
+      user.name = auth["info"]["name"]
+      user.screen_name = auth["info"]["nickname"]
+    end
+  end
+end
+```
+
+編集後、migrate
+
+```shell:
+rake db:migrate
+```
+
+##ApplicationControllerを編集
+
+app/controllers/application_controller.rb を編集
+
+```ruby:application_controller.rb
+class ApplicationController < ActionController::Base
+  ...
+
+  helper_method :current_user
+
+  private
+
+  def current_user
+    @current_user ||= User.find(session[:user_id]) if session[:user_id]
+  end
+end
+```
+
+##Viewの作成
+
+```shell:
+rails g controller login index
+```
+
+app/views/login/index.html.erb に以下を追加
+
+```ruby:index.html.erb
+<% if current_user %>
+  Welcome <%= current_user.name %>!
+  <%= link_to "Sign Out", signout_path %>
+<% else %>
+  <%= link_to "Sign in with Twitter", "/auth/twitter" %>
+<% end %>
+```
+
+config/routes.rbを編集
+
+```ruby:routes.rb
+root :to => "login#index"
+```
+
+
+public/index.htmlがあれば、削除。
+
+```shell:
+rails s
+```
+でサーバー起動。
+そののち、http://localhost:3000/ にアクセスでログインできるか確認できる。

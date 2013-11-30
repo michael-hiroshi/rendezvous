@@ -1,0 +1,22 @@
+
+参考
+[Rails4でsporkがエラー - rochefort's blog](http://rochefort.hatenablog.com/entry/2013/03/30/221345)
+
+上記ブログに書いてあるとおり、
+
+```bash:
+gem search spork --pre
+```
+でspork 1.0.0rc3を探してきて、
+
+```Gemfile
+gem 'spork', '1.0.0rc3'
+```
+
+と記入後、
+
+```bash:
+bundle update spork
+```
+
+とかやると動くようになりました。
